@@ -2,7 +2,7 @@
 // @name         Slot Machine Data Recorder
 // @name:zh-TW   老虎機數據記錄器
 // @namespace    slot-recorder
-// @version      1.4.0
+// @version      1.5.0
 // @description  Records slot machine spin data (balance, symbols, bets, special events) and exports to CSV
 // @description:zh-TW  記錄老虎機旋轉數據（餘額、圖案、下注、特殊事件）並匯出 CSV
 // @match        *://*/*
@@ -292,6 +292,7 @@ function downloadCSV() {
 
 // ── interceptor.js ──────────────────────────────────────────────
 // ─── Network Interceptors (Fetch / XHR / WebSocket) ───
+// Uses page-level script injection to bypass Tampermonkey sandbox.
 
 var interceptedRequests = []; // debug log
 var onRequestCaptured = null; // callback set by UI
@@ -299,15 +300,12 @@ var _interceptorConfig = null;
 
 function initInterceptors(config) {
   _interceptorConfig = config;
-  installFetchInterceptor();
-  installXHRInterceptor();
-  installWebSocketInterceptor();
+  injectPageInterceptor();
   installPostMessageInterceptor();
 }
 
 function shouldCapture(url) {
   if (!_interceptorConfig) return false;
-  // In debug mode with no pattern, capture everything
   if (_interceptorConfig.debugMode && !_interceptorConfig.urlPattern) return true;
   if (!_interceptorConfig.urlPattern) return false;
   try {
@@ -327,7 +325,6 @@ function parseQueryString(text) {
     if (eqIdx === -1) continue;
     var key = decodeURIComponent(pairs[i].substring(0, eqIdx));
     var val = decodeURIComponent(pairs[i].substring(eqIdx + 1));
-    // Try to convert numeric values
     if (/^-?\d+(\.\d+)?$/.test(val)) {
       result[key] = parseFloat(val);
     } else if (val === 'true') {
@@ -341,19 +338,14 @@ function parseQueryString(text) {
   return Object.keys(result).length > 0 ? result : null;
 }
 
-// Try to parse response text as JSON first, then as URL-encoded query string
 function parseResponseText(text) {
   if (!text || text.length < 3) return null;
   text = text.trim();
 
-  // Try JSON first
   if (text.charAt(0) === '{' || text.charAt(0) === '[') {
-    try {
-      return JSON.parse(text);
-    } catch (e) { /* not JSON */ }
+    try { return JSON.parse(text); } catch (e) {}
   }
 
-  // Try URL-encoded query string (key=value&key2=value2)
   if (text.indexOf('=') !== -1 && text.indexOf('<') === -1) {
     return parseQueryString(text);
   }
@@ -369,14 +361,12 @@ function processResponse(url, data) {
   };
 
   interceptedRequests.push(entry);
-  // Keep debug log bounded
   if (interceptedRequests.length > 200) {
     interceptedRequests.splice(0, interceptedRequests.length - 200);
   }
 
   if (onRequestCaptured) onRequestCaptured(entry);
 
-  // If recording is active and mappings are configured, parse and record
   if (_interceptorConfig && _interceptorConfig.active && _interceptorConfig.fieldMappings) {
     var hasMappings = Object.keys(_interceptorConfig.fieldMappings).some(function(k) {
       return _interceptorConfig.fieldMappings[k];
@@ -388,98 +378,116 @@ function processResponse(url, data) {
   }
 }
 
-// ── Fetch Interceptor ──
+// ── Page-level Script Injection ──
+// Injects interceptor code directly into the page context via <script> tag.
+// This bypasses Tampermonkey's sandbox so we can monkey-patch the real
+// XMLHttpRequest, fetch, and WebSocket that the game code uses.
+// Intercepted data is sent back via CustomEvent.
 
-function installFetchInterceptor() {
-  var win = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  var originalFetch = win.fetch;
-  if (!originalFetch) return;
+function injectPageInterceptor() {
+  var EVENT_NAME = '__slotRecorderData__';
 
-  win.fetch = function() {
-    var args = arguments;
-    var url = '';
-    if (typeof args[0] === 'string') {
-      url = args[0];
-    } else if (args[0] && args[0].url) {
-      url = args[0].url;
-    }
+  // Listen for events from the injected page script
+  document.addEventListener(EVENT_NAME, function(e) {
+    try {
+      var detail = e.detail;
+      if (!detail || !detail.url) return;
 
-    var result = originalFetch.apply(this, args);
-
-    if (shouldCapture(url)) {
-      result.then(function(response) {
-        var clone = response.clone();
-        clone.text().then(function(text) {
-          var parsed = parseResponseText(text);
-          if (parsed) processResponse(url, parsed);
-        }).catch(function() {});
-      }).catch(function() {});
-    }
-
-    return result;
-  };
-}
-
-// ── XMLHttpRequest Interceptor ──
-
-function installXHRInterceptor() {
-  var win = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  var OrigXHR = win.XMLHttpRequest;
-  if (!OrigXHR) return;
-
-  var origOpen = OrigXHR.prototype.open;
-  var origSend = OrigXHR.prototype.send;
-
-  OrigXHR.prototype.open = function(method, url) {
-    this._slotRecUrl = url;
-    return origOpen.apply(this, arguments);
-  };
-
-  OrigXHR.prototype.send = function() {
-    var self = this;
-    var url = self._slotRecUrl || '';
-
-    if (shouldCapture(url)) {
-      self.addEventListener('load', function() {
-        var parsed = parseResponseText(self.responseText);
-        if (parsed) processResponse(url, parsed);
-      });
-    }
-
-    return origSend.apply(this, arguments);
-  };
-}
-
-// ── WebSocket Interceptor ──
-
-function installWebSocketInterceptor() {
-  var win = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
-  var OrigWS = win.WebSocket;
-  if (!OrigWS) return;
-
-  win.WebSocket = function(url, protocols) {
-    var ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);
-
-    ws.addEventListener('message', function(event) {
-      if (!shouldCapture(url)) return;
-      var data = event.data;
-      if (typeof data === 'string') {
-        var parsed = parseResponseText(data);
-        if (parsed) processResponse(url, parsed);
+      if (shouldCapture(detail.url)) {
+        var parsed = parseResponseText(detail.body);
+        if (parsed) {
+          processResponse(detail.url, parsed);
+        }
       }
-    });
+    } catch (err) {
+      console.warn('[SlotRecorder] Error processing intercepted data:', err);
+    }
+  });
 
-    return ws;
-  };
+  // Code to inject into the page context
+  var injectedCode = '(' + function(eventName) {
+    // ── Patch XMLHttpRequest ──
+    var OrigXHR = XMLHttpRequest;
+    var origOpen = OrigXHR.prototype.open;
+    var origSend = OrigXHR.prototype.send;
 
-  win.WebSocket.prototype = OrigWS.prototype;
-  win.WebSocket.CONNECTING = OrigWS.CONNECTING;
-  win.WebSocket.OPEN = OrigWS.OPEN;
-  win.WebSocket.CLOSING = OrigWS.CLOSING;
-  win.WebSocket.CLOSED = OrigWS.CLOSED;
+    OrigXHR.prototype.open = function(method, url) {
+      this.__sr_url = url;
+      return origOpen.apply(this, arguments);
+    };
+
+    OrigXHR.prototype.send = function() {
+      var self = this;
+      self.addEventListener('load', function() {
+        try {
+          if (self.responseText && self.responseText.length > 2) {
+            document.dispatchEvent(new CustomEvent(eventName, {
+              detail: { url: self.__sr_url || '', body: self.responseText }
+            }));
+          }
+        } catch (e) {}
+      });
+      return origSend.apply(this, arguments);
+    };
+
+    // ── Patch fetch ──
+    var origFetch = window.fetch;
+    if (origFetch) {
+      window.fetch = function() {
+        var args = arguments;
+        var url = '';
+        if (typeof args[0] === 'string') url = args[0];
+        else if (args[0] && args[0].url) url = args[0].url;
+
+        var result = origFetch.apply(this, args);
+        result.then(function(response) {
+          var clone = response.clone();
+          clone.text().then(function(text) {
+            if (text && text.length > 2) {
+              document.dispatchEvent(new CustomEvent(eventName, {
+                detail: { url: url, body: text }
+              }));
+            }
+          }).catch(function() {});
+        }).catch(function() {});
+        return result;
+      };
+    }
+
+    // ── Patch WebSocket ──
+    var OrigWS = window.WebSocket;
+    if (OrigWS) {
+      window.WebSocket = function(url, protocols) {
+        var ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);
+        ws.addEventListener('message', function(event) {
+          if (typeof event.data === 'string' && event.data.length > 2) {
+            document.dispatchEvent(new CustomEvent(eventName, {
+              detail: { url: 'ws://' + url, body: event.data }
+            }));
+          }
+        });
+        return ws;
+      };
+      window.WebSocket.prototype = OrigWS.prototype;
+      window.WebSocket.CONNECTING = OrigWS.CONNECTING;
+      window.WebSocket.OPEN = OrigWS.OPEN;
+      window.WebSocket.CLOSING = OrigWS.CLOSING;
+      window.WebSocket.CLOSED = OrigWS.CLOSED;
+    }
+
+    console.log('[SlotRecorder] Page-level interceptors injected');
+  } + ')(' + JSON.stringify(EVENT_NAME) + ');';
+
+  // Inject as <script> tag — runs in page context, not Tampermonkey sandbox
+  var script = document.createElement('script');
+  script.textContent = injectedCode;
+  (document.head || document.documentElement).appendChild(script);
+  script.remove(); // clean up DOM, code already executed
+
+  console.log('[SlotRecorder] Script injection complete');
 }
 
-// ── postMessage Interceptor (for iframe-based games like Pragmatic Play) ──
+// ── postMessage Interceptor (for iframe-parent communication) ──
 
 function installPostMessageInterceptor() {
   var win = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
@@ -488,7 +496,6 @@ function installPostMessageInterceptor() {
     var data = event.data;
     if (!data) return;
 
-    // Try to parse if it's a string
     if (typeof data === 'string') {
       if (data.length < 5) return;
       var parsed = parseResponseText(data);
@@ -499,7 +506,6 @@ function installPostMessageInterceptor() {
       }
     }
 
-    // Only process objects (not primitives)
     if (typeof data !== 'object' || data === null) return;
 
     var source = 'postMessage://' + (event.origin || 'unknown');
