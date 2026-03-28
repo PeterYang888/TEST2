@@ -113,9 +113,9 @@ const FIELD_LABELS = {
 
 function loadConfig() {
   try {
-    const saved = GM_getValue('slotRecorderConfig', null);
+    var saved = localStorage.getItem('slotRecorderConfig');
     if (saved) {
-      const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+      var parsed = JSON.parse(saved);
       return Object.assign({}, DEFAULT_CONFIG, parsed, {
         fieldMappings: Object.assign({}, DEFAULT_CONFIG.fieldMappings, parsed.fieldMappings || {}),
       });
@@ -128,7 +128,7 @@ function loadConfig() {
 
 function saveConfig(config) {
   try {
-    GM_setValue('slotRecorderConfig', JSON.stringify(config));
+    localStorage.setItem('slotRecorderConfig', JSON.stringify(config));
   } catch (e) {
     console.warn('[SlotRecorder] Failed to save config:', e);
   }
