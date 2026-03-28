@@ -9,6 +9,7 @@ function initInterceptors(config) {
   installFetchInterceptor();
   installXHRInterceptor();
   installWebSocketInterceptor();
+  installPostMessageInterceptor();
 }
 
 function shouldCapture(url) {
@@ -145,4 +146,38 @@ function installWebSocketInterceptor() {
   win.WebSocket.OPEN = OrigWS.OPEN;
   win.WebSocket.CLOSING = OrigWS.CLOSING;
   win.WebSocket.CLOSED = OrigWS.CLOSED;
+}
+
+// ── postMessage Interceptor (for iframe-based games like Pragmatic Play) ──
+// Games in iframes communicate with the parent page via window.postMessage.
+// This captures those messages without needing to inject into the iframe.
+
+function installPostMessageInterceptor() {
+  var win = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+
+  win.addEventListener('message', function(event) {
+    var data = event.data;
+    if (!data) return;
+
+    // Try to parse if it's a string
+    if (typeof data === 'string') {
+      // Skip very short messages or non-JSON
+      if (data.length < 5) return;
+      try {
+        data = JSON.parse(data);
+      } catch (e) {
+        return; // not JSON, skip
+      }
+    }
+
+    // Only process objects (not primitives)
+    if (typeof data !== 'object' || data === null) return;
+
+    // Build a source label from the event origin
+    var source = 'postMessage://' + (event.origin || 'unknown');
+
+    processResponse(source, data);
+  });
+
+  console.log('[SlotRecorder] postMessage interceptor installed');
 }
