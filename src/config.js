@@ -28,19 +28,19 @@ const DEFAULT_CONFIG = {
 var PRESET_PROFILES = {
   'pragmatic-play': {
     name: 'Pragmatic Play (Gates of Olympus 等)',
-    urlPattern: 'pragmaticplay|ppgames|pgsoft',
-    note: '適用於大多數 Pragmatic Play 遊戲。請先用 Debug Log 確認實際路徑。',
+    urlPattern: 'gameService|reloadBalance',
+    note: 'PP 遊戲回傳 URL-encoded 格式 (key=value&key2=value2)。已自動支援解析。',
     fieldMappings: {
-      balance:        'b',
-      winAmount:      'w',
-      betAmount:      'bt',
-      betLines:       '',
+      balance:        'balance',
+      winAmount:      'tw',
+      betAmount:      'tmb',
+      betLines:       'nl',
       reels:          'rs',
       freeSpins:      'fs',
       bonusTriggered: 'bonus',
       multiplier:     'tm',
       gameId:         'gi',
-      spinId:         'sid',
+      spinId:         'rid',
     },
   },
   'netent': {

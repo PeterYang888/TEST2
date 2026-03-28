@@ -24,11 +24,55 @@ function shouldCapture(url) {
   }
 }
 
-function processResponse(url, json) {
+// Parse URL-encoded query string into object (for Pragmatic Play etc.)
+function parseQueryString(text) {
+  if (!text || text.indexOf('=') === -1) return null;
+  var result = {};
+  var pairs = text.split('&');
+  for (var i = 0; i < pairs.length; i++) {
+    var eqIdx = pairs[i].indexOf('=');
+    if (eqIdx === -1) continue;
+    var key = decodeURIComponent(pairs[i].substring(0, eqIdx));
+    var val = decodeURIComponent(pairs[i].substring(eqIdx + 1));
+    // Try to convert numeric values
+    if (/^-?\d+(\.\d+)?$/.test(val)) {
+      result[key] = parseFloat(val);
+    } else if (val === 'true') {
+      result[key] = true;
+    } else if (val === 'false') {
+      result[key] = false;
+    } else {
+      result[key] = val;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+// Try to parse response text as JSON first, then as URL-encoded query string
+function parseResponseText(text) {
+  if (!text || text.length < 3) return null;
+  text = text.trim();
+
+  // Try JSON first
+  if (text.charAt(0) === '{' || text.charAt(0) === '[') {
+    try {
+      return JSON.parse(text);
+    } catch (e) { /* not JSON */ }
+  }
+
+  // Try URL-encoded query string (key=value&key2=value2)
+  if (text.indexOf('=') !== -1 && text.indexOf('<') === -1) {
+    return parseQueryString(text);
+  }
+
+  return null;
+}
+
+function processResponse(url, data) {
   var entry = {
     timestamp: new Date().toISOString(),
     url: url,
-    data: json,
+    data: data,
   };
 
   interceptedRequests.push(entry);
@@ -45,7 +89,7 @@ function processResponse(url, json) {
       return _interceptorConfig.fieldMappings[k];
     });
     if (hasMappings) {
-      var record = parseSpinResult(json, _interceptorConfig.fieldMappings);
+      var record = parseSpinResult(data, _interceptorConfig.fieldMappings);
       if (record) addRecord(record);
     }
   }
@@ -73,10 +117,8 @@ function installFetchInterceptor() {
       result.then(function(response) {
         var clone = response.clone();
         clone.text().then(function(text) {
-          try {
-            var json = JSON.parse(text);
-            processResponse(url, json);
-          } catch (e) { /* not JSON */ }
+          var parsed = parseResponseText(text);
+          if (parsed) processResponse(url, parsed);
         }).catch(function() {});
       }).catch(function() {});
     }
@@ -106,10 +148,8 @@ function installXHRInterceptor() {
 
     if (shouldCapture(url)) {
       self.addEventListener('load', function() {
-        try {
-          var json = JSON.parse(self.responseText);
-          processResponse(url, json);
-        } catch (e) { /* not JSON */ }
+        var parsed = parseResponseText(self.responseText);
+        if (parsed) processResponse(url, parsed);
       });
     }
 
@@ -131,10 +171,8 @@ function installWebSocketInterceptor() {
       if (!shouldCapture(url)) return;
       var data = event.data;
       if (typeof data === 'string') {
-        try {
-          var json = JSON.parse(data);
-          processResponse(url, json);
-        } catch (e) { /* not JSON */ }
+        var parsed = parseResponseText(data);
+        if (parsed) processResponse(url, parsed);
       }
     });
 
@@ -149,8 +187,6 @@ function installWebSocketInterceptor() {
 }
 
 // ── postMessage Interceptor (for iframe-based games like Pragmatic Play) ──
-// Games in iframes communicate with the parent page via window.postMessage.
-// This captures those messages without needing to inject into the iframe.
 
 function installPostMessageInterceptor() {
   var win = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
@@ -161,21 +197,19 @@ function installPostMessageInterceptor() {
 
     // Try to parse if it's a string
     if (typeof data === 'string') {
-      // Skip very short messages or non-JSON
       if (data.length < 5) return;
-      try {
-        data = JSON.parse(data);
-      } catch (e) {
-        return; // not JSON, skip
+      var parsed = parseResponseText(data);
+      if (parsed) {
+        data = parsed;
+      } else {
+        return;
       }
     }
 
     // Only process objects (not primitives)
     if (typeof data !== 'object' || data === null) return;
 
-    // Build a source label from the event origin
     var source = 'postMessage://' + (event.origin || 'unknown');
-
     processResponse(source, data);
   });
 
