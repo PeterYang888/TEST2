@@ -2,7 +2,7 @@
 // @name         Slot Machine Data Recorder
 // @name:zh-TW   老虎機數據記錄器
 // @namespace    slot-recorder
-// @version      1.3.0
+// @version      1.4.0
 // @description  Records slot machine spin data (balance, symbols, bets, special events) and exports to CSV
 // @description:zh-TW  記錄老虎機旋轉數據（餘額、圖案、下注、特殊事件）並匯出 CSV
 // @match        *://*/*
@@ -37,6 +37,9 @@ const DEFAULT_CONFIG = {
     multiplier:     '',
     gameId:         '',
     spinId:         '',
+    extra1:         '',
+    extra2:         '',
+    extra3:         '',
   },
   ocrRegions: [],
 };
@@ -48,19 +51,22 @@ const DEFAULT_CONFIG = {
 var PRESET_PROFILES = {
   'pragmatic-play': {
     name: 'Pragmatic Play (Gates of Olympus 等)',
-    urlPattern: 'gameService|reloadBalance',
-    note: 'PP 遊戲回傳 URL-encoded 格式 (key=value&key2=value2)。已自動支援解析。',
+    urlPattern: 'gameService',
+    note: 'PP 遊戲回傳 URL-encoded 格式。總下注 = c × l（幣值 × 線數）。',
     fieldMappings: {
       balance:        'balance',
       winAmount:      'tw',
-      betAmount:      'tmb',
-      betLines:       'nl',
-      reels:          'rs',
-      freeSpins:      'fs',
-      bonusTriggered: 'bonus',
-      multiplier:     'tm',
-      gameId:         'gi',
+      betAmount:      'c',
+      betLines:       'l',
+      reels:          's',
+      freeSpins:      'na',
+      bonusTriggered: 'bl',
+      multiplier:     'rs_m',
+      gameId:         'counter',
       spinId:         'rid',
+      extra1:         'w',
+      extra2:         'na',
+      extra3:         'tmb',
     },
   },
   'netent': {
@@ -120,6 +126,9 @@ const FIELD_LABELS = {
   multiplier:     '倍率 Multiplier',
   gameId:         '遊戲 ID',
   spinId:         '旋轉 ID',
+  extra1:         '自訂欄位 1',
+  extra2:         '自訂欄位 2',
+  extra3:         '自訂欄位 3',
 };
 
 function loadConfig() {
@@ -161,23 +170,29 @@ function resolvePath(obj, path) {
 }
 
 function parseSpinResult(json, mappings) {
-  const record = {
+  var reelsVal = resolvePath(json, mappings.reels);
+  var record = {
     timestamp:      new Date().toISOString(),
     balance:        resolvePath(json, mappings.balance),
     winAmount:      resolvePath(json, mappings.winAmount),
     betAmount:      resolvePath(json, mappings.betAmount),
     betLines:       resolvePath(json, mappings.betLines),
-    reels:          JSON.stringify(resolvePath(json, mappings.reels) || []),
-    freeSpins:      resolvePath(json, mappings.freeSpins) || false,
-    bonusTriggered: resolvePath(json, mappings.bonusTriggered) || false,
-    multiplier:     resolvePath(json, mappings.multiplier) || 1,
+    reels:          (typeof reelsVal === 'object') ? JSON.stringify(reelsVal) : (reelsVal || ''),
+    freeSpins:      resolvePath(json, mappings.freeSpins) || '',
+    bonusTriggered: resolvePath(json, mappings.bonusTriggered) || '',
+    multiplier:     resolvePath(json, mappings.multiplier) || '',
     gameId:         resolvePath(json, mappings.gameId) || '',
     spinId:         resolvePath(json, mappings.spinId) || '',
   };
 
-  const hasData = record.balance !== undefined
+  // Add extra fields if mapped
+  if (mappings.extra1) record.extra1 = resolvePath(json, mappings.extra1) || '';
+  if (mappings.extra2) record.extra2 = resolvePath(json, mappings.extra2) || '';
+  if (mappings.extra3) record.extra3 = resolvePath(json, mappings.extra3) || '';
+
+  var hasData = record.balance !== undefined
     || record.winAmount !== undefined
-    || record.reels !== '[]';
+    || record.reels;
 
   return hasData ? record : null;
 }

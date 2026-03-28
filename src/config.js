@@ -17,6 +17,9 @@ const DEFAULT_CONFIG = {
     multiplier:     '',
     gameId:         '',
     spinId:         '',
+    extra1:         '',
+    extra2:         '',
+    extra3:         '',
   },
   ocrRegions: [],
 };
@@ -28,19 +31,22 @@ const DEFAULT_CONFIG = {
 var PRESET_PROFILES = {
   'pragmatic-play': {
     name: 'Pragmatic Play (Gates of Olympus 等)',
-    urlPattern: 'gameService|reloadBalance',
-    note: 'PP 遊戲回傳 URL-encoded 格式 (key=value&key2=value2)。已自動支援解析。',
+    urlPattern: 'gameService',
+    note: 'PP 遊戲回傳 URL-encoded 格式。總下注 = c × l（幣值 × 線數）。',
     fieldMappings: {
       balance:        'balance',
       winAmount:      'tw',
-      betAmount:      'tmb',
-      betLines:       'nl',
-      reels:          'rs',
-      freeSpins:      'fs',
-      bonusTriggered: 'bonus',
-      multiplier:     'tm',
-      gameId:         'gi',
+      betAmount:      'c',
+      betLines:       'l',
+      reels:          's',
+      freeSpins:      'na',
+      bonusTriggered: 'bl',
+      multiplier:     'rs_m',
+      gameId:         'counter',
       spinId:         'rid',
+      extra1:         'w',
+      extra2:         'na',
+      extra3:         'tmb',
     },
   },
   'netent': {
@@ -100,6 +106,9 @@ const FIELD_LABELS = {
   multiplier:     '倍率 Multiplier',
   gameId:         '遊戲 ID',
   spinId:         '旋轉 ID',
+  extra1:         '自訂欄位 1',
+  extra2:         '自訂欄位 2',
+  extra3:         '自訂欄位 3',
 };
 
 function loadConfig() {

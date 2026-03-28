@@ -12,23 +12,29 @@ function resolvePath(obj, path) {
 }
 
 function parseSpinResult(json, mappings) {
-  const record = {
+  var reelsVal = resolvePath(json, mappings.reels);
+  var record = {
     timestamp:      new Date().toISOString(),
     balance:        resolvePath(json, mappings.balance),
     winAmount:      resolvePath(json, mappings.winAmount),
     betAmount:      resolvePath(json, mappings.betAmount),
     betLines:       resolvePath(json, mappings.betLines),
-    reels:          JSON.stringify(resolvePath(json, mappings.reels) || []),
-    freeSpins:      resolvePath(json, mappings.freeSpins) || false,
-    bonusTriggered: resolvePath(json, mappings.bonusTriggered) || false,
-    multiplier:     resolvePath(json, mappings.multiplier) || 1,
+    reels:          (typeof reelsVal === 'object') ? JSON.stringify(reelsVal) : (reelsVal || ''),
+    freeSpins:      resolvePath(json, mappings.freeSpins) || '',
+    bonusTriggered: resolvePath(json, mappings.bonusTriggered) || '',
+    multiplier:     resolvePath(json, mappings.multiplier) || '',
     gameId:         resolvePath(json, mappings.gameId) || '',
     spinId:         resolvePath(json, mappings.spinId) || '',
   };
 
-  const hasData = record.balance !== undefined
+  // Add extra fields if mapped
+  if (mappings.extra1) record.extra1 = resolvePath(json, mappings.extra1) || '';
+  if (mappings.extra2) record.extra2 = resolvePath(json, mappings.extra2) || '';
+  if (mappings.extra3) record.extra3 = resolvePath(json, mappings.extra3) || '';
+
+  var hasData = record.balance !== undefined
     || record.winAmount !== undefined
-    || record.reels !== '[]';
+    || record.reels;
 
   return hasData ? record : null;
 }
