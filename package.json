@@ -1,0 +1,9 @@
+{
+  "name": "slot-machine-recorder",
+  "version": "1.0.0",
+  "description": "Tampermonkey userscript to record slot machine game data and export to CSV",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "license": "MIT"
+}
