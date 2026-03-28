@@ -6,6 +6,7 @@
 // @description  Records slot machine spin data (balance, symbols, bets, special events) and exports to CSV
 // @description:zh-TW  記錄老虎機旋轉數據（餘額、圖案、下注、特殊事件）並匯出 CSV
 // @match        *://*/*
+// @noframes     false
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
@@ -22,6 +23,7 @@
 
 const DEFAULT_CONFIG = {
   active: false,
+  activeProfile: '',
   urlPattern: '',
   debugMode: true,
   ocrEnabled: false,
@@ -38,6 +40,74 @@ const DEFAULT_CONFIG = {
     spinId:         '',
   },
   ocrRegions: [],
+};
+
+// ─── Preset Profiles for Known Platforms ───
+// These are common JSON path patterns. Actual paths may vary by operator/casino.
+// Users should verify with Debug Log and adjust if needed.
+
+var PRESET_PROFILES = {
+  'pragmatic-play': {
+    name: 'Pragmatic Play (Gates of Olympus 等)',
+    urlPattern: 'pragmaticplay|ppgames|pgsoft',
+    note: '適用於大多數 Pragmatic Play 遊戲。請先用 Debug Log 確認實際路徑。',
+    fieldMappings: {
+      balance:        'b',
+      winAmount:      'w',
+      betAmount:      'bt',
+      betLines:       '',
+      reels:          'rs',
+      freeSpins:      'fs',
+      bonusTriggered: 'bonus',
+      multiplier:     'tm',
+      gameId:         'gi',
+      spinId:         'sid',
+    },
+  },
+  'netent': {
+    name: 'NetEnt / Evolution',
+    urlPattern: 'netent|casinomodule|evolution',
+    note: '適用於 NetEnt 系列遊戲。部分遊戲可能使用 WebSocket。',
+    fieldMappings: {
+      balance:        'balance',
+      winAmount:      'winAmount',
+      betAmount:      'betAmount',
+      betLines:       'lines',
+      reels:          'reelSet',
+      freeSpins:      'freeSpins',
+      bonusTriggered: 'bonusGame',
+      multiplier:     'multiplier',
+      gameId:         'gameId',
+      spinId:         'roundId',
+    },
+  },
+  'pg-soft': {
+    name: 'PG Soft',
+    urlPattern: 'pgsoft|pocket-games',
+    note: '適用於 PG Soft 系列遊戲。',
+    fieldMappings: {
+      balance:        'dt.bl',
+      winAmount:      'dt.tw',
+      betAmount:      'dt.bt',
+      betLines:       '',
+      reels:          'dt.sr',
+      freeSpins:      'dt.fs',
+      bonusTriggered: 'dt.bg',
+      multiplier:     'dt.ml',
+      gameId:         'dt.gi',
+      spinId:         'dt.ri',
+    },
+  },
+  'custom': {
+    name: '自訂 Custom (手動設定)',
+    urlPattern: '',
+    note: '使用 Debug Log 觀察請求，手動設定所有欄位映射。',
+    fieldMappings: {
+      balance: '', winAmount: '', betAmount: '', betLines: '',
+      reels: '', freeSpins: '', bonusTriggered: '', multiplier: '',
+      gameId: '', spinId: '',
+    },
+  },
 };
 
 const FIELD_LABELS = {
@@ -791,8 +861,17 @@ function showConfigModal(shadow, config) {
   overlay.className = 'sr-config-overlay';
 
   var mappings = config.fieldMappings || {};
-  var fieldsHTML = '';
   var fieldKeys = Object.keys(FIELD_LABELS);
+
+  // Build profile selector options
+  var profileOptions = '';
+  Object.keys(PRESET_PROFILES).forEach(function(key) {
+    var selected = (config.activeProfile === key) ? ' selected' : '';
+    profileOptions += '<option value="' + key + '"' + selected + '>' + escapeHTML(PRESET_PROFILES[key].name) + '</option>';
+  });
+
+  // Build field mapping inputs
+  var fieldsHTML = '';
   fieldKeys.forEach(function(key) {
     fieldsHTML += '<label>' + FIELD_LABELS[key] + '</label>';
     fieldsHTML += '<input type="text" id="sr-map-' + key + '" value="' + escapeHTML(mappings[key] || '') + '" placeholder="例: data.result.' + key + '">';
@@ -801,10 +880,16 @@ function showConfigModal(shadow, config) {
   overlay.innerHTML = '\
 <div class="sr-config-modal">\
   <h3>設定 Configuration</h3>\
+  <label>預設範本 Preset Profile</label>\
+  <select id="sr-profile-select" style="width:100%;padding:6px 8px;background:#111;border:1px solid #333;border-radius:4px;color:#e0e0e0;font-size:12px">\
+    <option value="">-- 選擇預設範本或手動設定 --</option>\
+    ' + profileOptions + '\
+  </select>\
+  <div id="sr-profile-note" style="color:#e94560;font-size:11px;margin:4px 0 8px;min-height:16px"></div>\
   <label>URL 過濾模式 (正則表達式)</label>\
-  <input type="text" id="sr-url-pattern" value="' + escapeHTML(config.urlPattern || '') + '" placeholder="例: api\\.example\\.com/spin">\
+  <input type="text" id="sr-url-pattern" value="' + escapeHTML(config.urlPattern || '') + '" placeholder="例: pragmaticplay|api\\.example\\.com">\
   <h3 style="margin-top:16px">欄位映射 Field Mappings</h3>\
-  <p style="color:#888;font-size:11px;margin:0 0 8px">填入 JSON 路徑，例如 data.result.winAmount。也可以在 Debug Log 中點擊請求，直接從 JSON 樹中選取。</p>\
+  <p style="color:#888;font-size:11px;margin:0 0 8px">填入 JSON 路徑，例如 data.result.winAmount。也可以在 Debug Log 中點擊請求，直接從 JSON 樹中選取。<br>選擇預設範本會自動填入常見路徑，但請用 Debug Log 確認實際路徑是否正確。</p>\
   ' + fieldsHTML + '\
   <div class="sr-btn-row">\
     <button class="sr-btn" id="sr-config-save">儲存</button>\
@@ -814,7 +899,36 @@ function showConfigModal(shadow, config) {
 
   shadow.appendChild(overlay);
 
+  // Profile selector logic
+  var profileSelect = shadow.getElementById('sr-profile-select');
+  var profileNote = shadow.getElementById('sr-profile-note');
+
+  profileSelect.addEventListener('change', function() {
+    var key = profileSelect.value;
+    if (!key || !PRESET_PROFILES[key]) {
+      profileNote.textContent = '';
+      return;
+    }
+    var profile = PRESET_PROFILES[key];
+    profileNote.textContent = profile.note || '';
+
+    // Fill URL pattern
+    shadow.getElementById('sr-url-pattern').value = profile.urlPattern || '';
+
+    // Fill field mappings
+    fieldKeys.forEach(function(fk) {
+      var input = shadow.getElementById('sr-map-' + fk);
+      if (input) input.value = profile.fieldMappings[fk] || '';
+    });
+  });
+
+  // Show note for currently selected profile
+  if (config.activeProfile && PRESET_PROFILES[config.activeProfile]) {
+    profileNote.textContent = PRESET_PROFILES[config.activeProfile].note || '';
+  }
+
   shadow.getElementById('sr-config-save').addEventListener('click', function() {
+    config.activeProfile = profileSelect.value || '';
     config.urlPattern = shadow.getElementById('sr-url-pattern').value.trim();
     fieldKeys.forEach(function(key) {
       config.fieldMappings[key] = shadow.getElementById('sr-map-' + key).value.trim();

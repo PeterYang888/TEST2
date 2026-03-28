@@ -2,6 +2,7 @@
 
 const DEFAULT_CONFIG = {
   active: false,
+  activeProfile: '',
   urlPattern: '',
   debugMode: true,
   ocrEnabled: false,
@@ -18,6 +19,74 @@ const DEFAULT_CONFIG = {
     spinId:         '',
   },
   ocrRegions: [],
+};
+
+// ─── Preset Profiles for Known Platforms ───
+// These are common JSON path patterns. Actual paths may vary by operator/casino.
+// Users should verify with Debug Log and adjust if needed.
+
+var PRESET_PROFILES = {
+  'pragmatic-play': {
+    name: 'Pragmatic Play (Gates of Olympus 等)',
+    urlPattern: 'pragmaticplay|ppgames|pgsoft',
+    note: '適用於大多數 Pragmatic Play 遊戲。請先用 Debug Log 確認實際路徑。',
+    fieldMappings: {
+      balance:        'b',
+      winAmount:      'w',
+      betAmount:      'bt',
+      betLines:       '',
+      reels:          'rs',
+      freeSpins:      'fs',
+      bonusTriggered: 'bonus',
+      multiplier:     'tm',
+      gameId:         'gi',
+      spinId:         'sid',
+    },
+  },
+  'netent': {
+    name: 'NetEnt / Evolution',
+    urlPattern: 'netent|casinomodule|evolution',
+    note: '適用於 NetEnt 系列遊戲。部分遊戲可能使用 WebSocket。',
+    fieldMappings: {
+      balance:        'balance',
+      winAmount:      'winAmount',
+      betAmount:      'betAmount',
+      betLines:       'lines',
+      reels:          'reelSet',
+      freeSpins:      'freeSpins',
+      bonusTriggered: 'bonusGame',
+      multiplier:     'multiplier',
+      gameId:         'gameId',
+      spinId:         'roundId',
+    },
+  },
+  'pg-soft': {
+    name: 'PG Soft',
+    urlPattern: 'pgsoft|pocket-games',
+    note: '適用於 PG Soft 系列遊戲。',
+    fieldMappings: {
+      balance:        'dt.bl',
+      winAmount:      'dt.tw',
+      betAmount:      'dt.bt',
+      betLines:       '',
+      reels:          'dt.sr',
+      freeSpins:      'dt.fs',
+      bonusTriggered: 'dt.bg',
+      multiplier:     'dt.ml',
+      gameId:         'dt.gi',
+      spinId:         'dt.ri',
+    },
+  },
+  'custom': {
+    name: '自訂 Custom (手動設定)',
+    urlPattern: '',
+    note: '使用 Debug Log 觀察請求，手動設定所有欄位映射。',
+    fieldMappings: {
+      balance: '', winAmount: '', betAmount: '', betLines: '',
+      reels: '', freeSpins: '', bonusTriggered: '', multiplier: '',
+      gameId: '', spinId: '',
+    },
+  },
 };
 
 const FIELD_LABELS = {

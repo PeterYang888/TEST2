@@ -377,8 +377,17 @@ function showConfigModal(shadow, config) {
   overlay.className = 'sr-config-overlay';
 
   var mappings = config.fieldMappings || {};
-  var fieldsHTML = '';
   var fieldKeys = Object.keys(FIELD_LABELS);
+
+  // Build profile selector options
+  var profileOptions = '';
+  Object.keys(PRESET_PROFILES).forEach(function(key) {
+    var selected = (config.activeProfile === key) ? ' selected' : '';
+    profileOptions += '<option value="' + key + '"' + selected + '>' + escapeHTML(PRESET_PROFILES[key].name) + '</option>';
+  });
+
+  // Build field mapping inputs
+  var fieldsHTML = '';
   fieldKeys.forEach(function(key) {
     fieldsHTML += '<label>' + FIELD_LABELS[key] + '</label>';
     fieldsHTML += '<input type="text" id="sr-map-' + key + '" value="' + escapeHTML(mappings[key] || '') + '" placeholder="例: data.result.' + key + '">';
@@ -387,10 +396,16 @@ function showConfigModal(shadow, config) {
   overlay.innerHTML = '\
 <div class="sr-config-modal">\
   <h3>設定 Configuration</h3>\
+  <label>預設範本 Preset Profile</label>\
+  <select id="sr-profile-select" style="width:100%;padding:6px 8px;background:#111;border:1px solid #333;border-radius:4px;color:#e0e0e0;font-size:12px">\
+    <option value="">-- 選擇預設範本或手動設定 --</option>\
+    ' + profileOptions + '\
+  </select>\
+  <div id="sr-profile-note" style="color:#e94560;font-size:11px;margin:4px 0 8px;min-height:16px"></div>\
   <label>URL 過濾模式 (正則表達式)</label>\
-  <input type="text" id="sr-url-pattern" value="' + escapeHTML(config.urlPattern || '') + '" placeholder="例: api\\.example\\.com/spin">\
+  <input type="text" id="sr-url-pattern" value="' + escapeHTML(config.urlPattern || '') + '" placeholder="例: pragmaticplay|api\\.example\\.com">\
   <h3 style="margin-top:16px">欄位映射 Field Mappings</h3>\
-  <p style="color:#888;font-size:11px;margin:0 0 8px">填入 JSON 路徑，例如 data.result.winAmount。也可以在 Debug Log 中點擊請求，直接從 JSON 樹中選取。</p>\
+  <p style="color:#888;font-size:11px;margin:0 0 8px">填入 JSON 路徑，例如 data.result.winAmount。也可以在 Debug Log 中點擊請求，直接從 JSON 樹中選取。<br>選擇預設範本會自動填入常見路徑，但請用 Debug Log 確認實際路徑是否正確。</p>\
   ' + fieldsHTML + '\
   <div class="sr-btn-row">\
     <button class="sr-btn" id="sr-config-save">儲存</button>\
@@ -400,7 +415,36 @@ function showConfigModal(shadow, config) {
 
   shadow.appendChild(overlay);
 
+  // Profile selector logic
+  var profileSelect = shadow.getElementById('sr-profile-select');
+  var profileNote = shadow.getElementById('sr-profile-note');
+
+  profileSelect.addEventListener('change', function() {
+    var key = profileSelect.value;
+    if (!key || !PRESET_PROFILES[key]) {
+      profileNote.textContent = '';
+      return;
+    }
+    var profile = PRESET_PROFILES[key];
+    profileNote.textContent = profile.note || '';
+
+    // Fill URL pattern
+    shadow.getElementById('sr-url-pattern').value = profile.urlPattern || '';
+
+    // Fill field mappings
+    fieldKeys.forEach(function(fk) {
+      var input = shadow.getElementById('sr-map-' + fk);
+      if (input) input.value = profile.fieldMappings[fk] || '';
+    });
+  });
+
+  // Show note for currently selected profile
+  if (config.activeProfile && PRESET_PROFILES[config.activeProfile]) {
+    profileNote.textContent = PRESET_PROFILES[config.activeProfile].note || '';
+  }
+
   shadow.getElementById('sr-config-save').addEventListener('click', function() {
+    config.activeProfile = profileSelect.value || '';
     config.urlPattern = shadow.getElementById('sr-url-pattern').value.trim();
     fieldKeys.forEach(function(key) {
       config.fieldMappings[key] = shadow.getElementById('sr-map-' + key).value.trim();
