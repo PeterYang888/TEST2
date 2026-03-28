@@ -2,11 +2,10 @@
 // @name         Slot Machine Data Recorder
 // @name:zh-TW   老虎機數據記錄器
 // @namespace    slot-recorder
-// @version      1.0.0
+// @version      1.1.0
 // @description  Records slot machine spin data (balance, symbols, bets, special events) and exports to CSV
 // @description:zh-TW  記錄老虎機旋轉數據（餘額、圖案、下注、特殊事件）並匯出 CSV
 // @match        *://*/*
-// @noframes     false
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
@@ -1101,16 +1100,54 @@ var _config = loadConfig();
 // Install interceptors immediately (runs at document-start)
 initInterceptors(_config);
 
-// Wait for DOM ready to inject UI
-function onDOMReady() {
-  createPanel(_config);
+// Wait for document.body to exist, then inject UI
+// At document-start, body doesn't exist yet, so we need to poll or wait
+function waitForBody(callback) {
+  if (document.body) {
+    callback();
+    return;
+  }
+  // Try again when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+      if (document.body) {
+        callback();
+      }
+    });
+  }
+  // Fallback: poll every 200ms (for edge cases in iframes)
+  var attempts = 0;
+  var timer = setInterval(function() {
+    attempts++;
+    if (document.body) {
+      clearInterval(timer);
+      callback();
+    } else if (attempts > 50) { // give up after 10 seconds
+      clearInterval(timer);
+      console.warn('[SlotRecorder] Could not find document.body after 10s');
+    }
+  }, 200);
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', onDOMReady);
-} else {
-  onDOMReady();
-}
+var _panelCreated = false;
+waitForBody(function() {
+  if (_panelCreated) return;
+  _panelCreated = true;
+
+  // Detect if this is the game iframe or the outer wrapper page
+  var isIframe = (window !== window.top);
+  var hasCanvas = document.querySelector('canvas');
+  var url = window.location.href;
+
+  // Log where the script is running for debugging
+  console.log('[SlotRecorder] v1.1.0 running on:', url);
+  console.log('[SlotRecorder] iframe:', isIframe, '| canvas:', !!hasCanvas);
+
+  // Always create panel — but if we're in the outer page with no canvas,
+  // still show it so user can see debug log and configure
+  createPanel(_config);
+  console.log('[SlotRecorder] Panel injected successfully');
+});
 
 // Register Tampermonkey menu commands
 if (typeof GM_registerMenuCommand !== 'undefined') {
@@ -1118,8 +1155,6 @@ if (typeof GM_registerMenuCommand !== 'undefined') {
     downloadCSV();
   });
 }
-
-console.log('[SlotRecorder] v1.0.0 initialized');
 
 
 })();
